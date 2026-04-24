@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% block title %}Process Video - Video Format Studio{% endblock %}
+
+{% block content %}
+<div class="workspace-grid">
+  <aside class="side-panel">
+      <p class="eyebrow mb-2">Source media</p>
+      <h2 class="panel-title">{{ videos|length }} video{% if videos|length != 1 %}s{% endif %} ready</h2>
+      <div class="video-list">
+        {% for video in videos %}
+          <article class="video-list-item">
+            <h3 class="h6 text-break mb-2">{{ video.original_name }}</h3>
+            <dl class="video-facts mb-0">
+              <div><dt>Duration</dt><dd>{{ video.info.duration_label }}</dd></div>
+              <div><dt>Resolution</dt><dd>{{ video.info.resolution }}</dd></div>
+              <div><dt>FPS</dt><dd>{{ video.info.fps }}</dd></div>
+              <div><dt>Size</dt><dd>{{ video.info.file_size_label }}</dd></div>
+            </dl>
+          </article>
+        {% endfor %}
+      </div>
+  </aside>
+
+  <section class="workspace-main">
+    <form id="processForm" class="editor-panel" enctype="multipart/form-data">
+      {% for video in videos %}
+        <input type="hidden" name="filenames" value="{{ video.filename }}" data-original-name="{{ video.original_name }}">
+      {% endfor %}
+
+      <div class="panel-toolbar mb-4">
+        <div>
+          <span class="toolbar-label">Export settings</span>
+          <strong>Apply to all videos</strong>
+        </div>
+        <span class="status-dot">{{ videos|length }} queued</span>
+      </div>
+
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label" for="output_format">Output format</label>
+          <select class="form-select" id="output_format" name="output_format">
+            {% for key, format in formats.items() %}
+              <option value="{{ key }}">{{ format.label }} - {{ format.ratio }} ({{ format.width }}x{{ format.height }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="category">Category</label>
+          <select class="form-select" id="category" name="category">
+            <option value="property">Property</option>
+            <option value="boating">Boating</option>
+            <option value="surfing">Surfing</option>
+          </select>
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label" for="trim_start">Trim start</label>
+          <input class="form-control" id="trim_start" name="trim_start" placeholder="00:00">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="trim_end">Trim end</label>
+          <input class="form-control" id="trim_end" name="trim_end" placeholder="00:30">
+        </div>
+
+        <div class="col-md-8">
+          <label class="form-label" for="title">Title overlay</label>
+          <input class="form-control" id="title" name="title" maxlength="120" placeholder="Oceanfront listing, Sunset cruise, Morning session">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label" for="text_position">Text position</label>
+          <select class="form-select" id="text_position" name="text_position">
+            <option value="top">Top</option>
+            <option value="center">Center</option>
+            <option value="bottom" selected>Bottom</option>
+          </select>
+        </div>
+
+        <div class="col-md-7">
+          <label class="form-label" for="logo">PNG logo watermark</label>
+          <input class="form-control" id="logo" name="logo" type="file" accept="image/png">
+        </div>
+        <div class="col-md-5">
+          <label class="form-label" for="logo_position">Logo position</label>
+          <select class="form-select" id="logo_position" name="logo_position">
+            <option value="top-right">Top-right</option>
+            <option value="bottom-right" selected>Bottom-right</option>
+          </select>
+        </div>
+
+        <div class="col-md-7">
+          <label class="form-label" for="music">Background music</label>
+          <input class="form-control" id="music" name="music" type="file" accept=".mp3,.wav,.m4a,.aac,.ogg,audio/*">
+        </div>
+        <div class="col-md-5 d-flex align-items-end">
+          <div class="form-check form-switch pb-2">
+            <input class="form-check-input" type="checkbox" role="switch" id="mute_audio" name="mute_audio">
+            <label class="form-check-label" for="mute_audio">Mute original audio</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="action-bar">
+        <button class="btn btn-primary btn-lg" type="submit" id="processButton">
+          Process {{ videos|length }} Video{% if videos|length != 1 %}s{% endif %}
+        </button>
+      </div>
+
+      <div class="progress mt-4 d-none" id="progressWrap" role="progressbar" aria-label="Processing progress">
+        <div class="progress-bar progress-bar-striped progress-bar-animated" id="progressBar" style="width: 15%">Preparing</div>
+      </div>
+      <div class="batch-progress-list mt-4 d-none" id="batchProgressList">
+        {% for video in videos %}
+          <div class="batch-progress-item" data-progress-filename="{{ video.filename }}">
+            <div class="d-flex justify-content-between gap-3 mb-2">
+              <span class="text-break">{{ video.original_name }}</span>
+              <strong class="batch-status">Queued</strong>
+            </div>
+            <div class="progress" role="progressbar" aria-label="File progress">
+              <div class="progress-bar" style="width: 0%">0%</div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+      <div class="alert alert-danger d-none mt-4" id="errorBox"></div>
+    </form>
+  </section>
+</div>
+
+<section class="result-panel d-none" id="resultPanel">
+  <div class="d-flex flex-column flex-md-row gap-3 justify-content-between align-items-md-center mb-3">
+    <div>
+      <p class="text-uppercase text-secondary fw-semibold small mb-1">Export ready</p>
+      <h2 class="h4 mb-0">Preview and download</h2>
+    </div>
+    <div class="d-flex flex-column flex-sm-row gap-2">
+      <a class="btn btn-outline-success px-4 d-none" id="downloadButton" href="#">Download First MP4</a>
+      <a class="btn btn-success px-4 d-none" id="zipButton" href="#">Download ZIP</a>
+    </div>
+  </div>
+  <video class="w-100 preview-video" id="previewVideo" controls playsinline></video>
+  <div class="output-list mt-3" id="outputList"></div>
+  <div class="metadata-box mt-3" id="metadataBox"></div>
+
+  <div class="youtube-metadata mt-4">
+    <div class="d-flex flex-column flex-md-row gap-2 justify-content-between align-items-md-center mb-3">
+      <div>
+        <p class="text-uppercase text-secondary fw-semibold small mb-1">Template AI results</p>
+        <h3 class="h5 mb-0">YouTube title, description, and keywords</h3>
+      </div>
+      <button class="btn btn-outline-primary btn-sm copy-button" type="button" data-copy-target="youtubeAll">Copy All</button>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-12">
+        <label class="form-label" for="youtubeTitle">YouTube title</label>
+        <div class="input-group">
+          <input class="form-control" id="youtubeTitle" readonly>
+          <button class="btn btn-outline-secondary copy-button" type="button" data-copy-target="youtubeTitle">Copy</button>
+        </div>
+      </div>
+
+      <div class="col-12">
+        <label class="form-label" for="youtubeDescription">Description</label>
+        <div class="copy-field">
+          <textarea class="form-control" id="youtubeDescription" rows="7" readonly></textarea>
+          <button class="btn btn-outline-secondary btn-sm copy-button" type="button" data-copy-target="youtubeDescription">Copy</button>
+        </div>
+      </div>
+
+      <div class="col-12">
+        <label class="form-label" for="youtubeKeywords">Keywords</label>
+        <div class="copy-field">
+          <textarea class="form-control" id="youtubeKeywords" rows="3" readonly></textarea>
+          <button class="btn btn-outline-secondary btn-sm copy-button" type="button" data-copy-target="youtubeKeywords">Copy</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Upload Video - Video Format Studio{% endblock %}
+
+{% block content %}
+<section class="upload-shell">
+  <div class="upload-copy">
+    <div class="eyebrow">Creator export suite</div>
+    <h1>Format video batches for every social channel.</h1>
+    <p>Upload property, boating, or surfing footage and export polished MP4s for wide, vertical, and square feeds.</p>
+    <div class="format-pills" aria-label="Supported formats">
+      <span>YouTube 16:9</span>
+      <span>Reels 9:16</span>
+      <span>Square 1:1</span>
+    </div>
+  </div>
+
+  <form action="{{ url_for('upload') }}" method="post" enctype="multipart/form-data" class="upload-panel">
+    <div class="panel-toolbar">
+      <div>
+        <span class="toolbar-label">New batch</span>
+        <strong>Upload videos</strong>
+      </div>
+      <span class="status-dot">Ready</span>
+    </div>
+
+    <label for="video" class="dropzone" id="dropzone">
+      <input id="video" name="video" type="file" accept=".mp4,.mov,video/mp4,video/quicktime" multiple required>
+      <span class="dropzone-icon">+</span>
+      <span class="dropzone-title">Drop videos here</span>
+      <span class="dropzone-subtitle">MP4 or MOV</span>
+      <span class="dropzone-file" id="selectedFile"></span>
+    </label>
+
+    <div class="upload-actions">
+      <div class="upload-specs">
+        <span>2GB max request</span>
+        <span>CRF 18</span>
+        <span>Fast preset</span>
+      </div>
+      <button class="btn btn-primary btn-lg" type="submit">Analyze Videos</button>
+    </div>
+  </form>
+</section>
+
+<section class="mini-metrics">
+  <div><strong>3</strong><span>Export layouts</span></div>
+  <div><strong>ZIP</strong><span>Batch download</span></div>
+  <div><strong>AI</strong><span>Template metadata</span></div>
+</section>
+{% endblock %}
