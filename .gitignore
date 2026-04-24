@@ -1,4 +1,5 @@
 .venv/
+.env
 .pycache/
 __pycache__/
 *.pyc
@@ -7,3 +8,10 @@ uploads/*
 outputs/*
 !uploads/.gitkeep
 !outputs/.gitkeep
+*.mp4
+*.mov
+*.m4v
+*.avi
+*.mkv
+*.webm
+*.zip
