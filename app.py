@@ -25,8 +25,9 @@ from werkzeug.utils import secure_filename
 
 
 BASE_DIR = Path(__file__).resolve().parent
-UPLOAD_DIR = BASE_DIR / "uploads"
-OUTPUT_DIR = BASE_DIR / "outputs"
+STORAGE_DIR = Path(os.getenv("STORAGE_DIR", BASE_DIR)).resolve()
+UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", STORAGE_DIR / "uploads")).resolve()
+OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", STORAGE_DIR / "outputs")).resolve()
 METADATA_JSON = OUTPUT_DIR / "metadata.json"
 METADATA_CSV = OUTPUT_DIR / "metadata.csv"
 
@@ -127,8 +128,8 @@ def create_app():
     app.config["OUTPUT_FOLDER"] = OUTPUT_DIR
     app.config["FILE_TTL_HOURS"] = int(os.getenv("FILE_TTL_HOURS", "24"))
 
-    UPLOAD_DIR.mkdir(exist_ok=True)
-    OUTPUT_DIR.mkdir(exist_ok=True)
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     @app.before_request
     def clean_old_files():
@@ -712,4 +713,8 @@ app = create_app()
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=True)
+    app.run(
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", "5000")),
+        debug=os.getenv("FLASK_DEBUG", "0") == "1",
+    )

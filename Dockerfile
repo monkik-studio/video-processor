@@ -16,4 +16,4 @@ COPY . .
 
 EXPOSE 10000
 
-CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:10000", "--timeout", "1800"]
+CMD gunicorn app:app --bind 0.0.0.0:${PORT:-10000} --timeout 1800 --workers 1
