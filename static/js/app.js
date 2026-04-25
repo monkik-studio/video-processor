@@ -85,12 +85,8 @@ if (processForm) {
         try {
           const formData = buildProcessPayload(filename);
 
-          const response = await fetch("/process", {
-            method: "POST",
-            body: formData,
-          });
-          const data = await response.json();
-          if (!response.ok || !data.ok) {
+          const data = await postFormData("/process", formData);
+          if (!data.ok) {
             throw new Error(data.error || "Video processing failed.");
           }
 
@@ -109,13 +105,8 @@ if (processForm) {
         throw new Error(failures.join("\n") || "No videos were processed.");
       }
 
-      const zipResponse = await fetch("/zip", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filenames: results.map((result) => result.filename) }),
-      });
-      const zipData = await zipResponse.json();
-      if (!zipResponse.ok || !zipData.ok) {
+      const zipData = await postJson("/zip", { filenames: results.map((result) => result.filename) });
+      if (!zipData.ok) {
         throw new Error(zipData.error || "ZIP creation failed.");
       }
 
@@ -202,6 +193,52 @@ if (processForm) {
     textarea.select();
     document.execCommand("copy");
     textarea.remove();
+  }
+
+  function postFormData(url, formData) {
+    return sendRequest({
+      url,
+      method: "POST",
+      body: formData,
+    });
+  }
+
+  function postJson(url, payload) {
+    return sendRequest({
+      url,
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+  }
+
+  function sendRequest({ url, method, body, headers = {} }) {
+    return new Promise((resolve, reject) => {
+      const request = new XMLHttpRequest();
+      request.open(method, url, true);
+      Object.entries(headers).forEach(([key, value]) => {
+        request.setRequestHeader(key, value);
+      });
+      request.onload = () => {
+        let data = {};
+        try {
+          data = JSON.parse(request.responseText || "{}");
+        } catch (_error) {
+          reject(new Error("The server returned an unreadable response."));
+          return;
+        }
+
+        if (request.status < 200 || request.status >= 300) {
+          reject(new Error(data.error || `Request failed with status ${request.status}.`));
+          return;
+        }
+        resolve(data);
+      };
+      request.onerror = () => reject(new Error("Network request failed."));
+      request.send(body);
+    });
   }
 
   function resetBatchProgress() {
