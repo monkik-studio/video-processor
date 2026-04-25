@@ -214,7 +214,9 @@ if (processForm) {
   }
 
   function getProgressRow(filename) {
-    return document.querySelector(`[data-progress-filename="${cssEscape(filename)}"]`);
+    return Array.from(document.querySelectorAll(".batch-progress-item")).find(
+      (row) => row.dataset.progressFilename === filename
+    );
   }
 
   function updateOverallProgress(percent, label) {
@@ -246,13 +248,6 @@ if (processForm) {
         `
       )
       .join("");
-  }
-
-  function cssEscape(value) {
-    if (window.CSS && window.CSS.escape) {
-      return window.CSS.escape(value);
-    }
-    return value.replace(/["\\]/g, "\\$&");
   }
 
   function escapeHtml(value) {
