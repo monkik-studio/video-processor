@@ -41,6 +41,11 @@ OUTPUT_FORMATS = {
     "square": {"label": "Square", "width": 1080, "height": 1080, "ratio": "1:1"},
 }
 
+DEFAULT_MAX_RENDER_PIXELS = "921600" if os.getenv("RENDER") else "2073600"
+MAX_RENDER_PIXELS = int(os.getenv("MAX_RENDER_PIXELS", DEFAULT_MAX_RENDER_PIXELS))
+OUTPUT_CRF = os.getenv("OUTPUT_CRF", "18")
+OUTPUT_PRESET = os.getenv("OUTPUT_PRESET", "fast")
+
 TEXT_POSITIONS = {
     "top": "y=h*0.09",
     "center": "y=(h-text_h)/2",
@@ -568,6 +573,7 @@ def build_ffmpeg_command(
     spec = OUTPUT_FORMATS[output_format]
     width = spec["width"]
     height = spec["height"]
+    width, height = fit_within_pixel_budget(width, height, MAX_RENDER_PIXELS)
     text_y = TEXT_POSITIONS.get(text_position, TEXT_POSITIONS["bottom"])
     logo_overlay = LOGO_POSITIONS.get(logo_position, LOGO_POSITIONS["bottom-right"])
     trim_start = validate_time(trim_start)
@@ -651,11 +657,13 @@ def build_ffmpeg_command(
             "-c:v",
             "libx264",
             "-preset",
-            "fast",
+            OUTPUT_PRESET,
             "-crf",
-            "18",
+            OUTPUT_CRF,
             "-threads",
             "1",
+            "-x264-params",
+            "frame-threads=1:sliced-threads=1",
             "-pix_fmt",
             "yuv420p",
             "-movflags",
@@ -668,6 +676,16 @@ def build_ffmpeg_command(
 
     command.append(str(output_path))
     return command
+
+
+def fit_within_pixel_budget(width, height, max_pixels):
+    if max_pixels <= 0 or width * height <= max_pixels:
+        return width, height
+
+    ratio = (max_pixels / (width * height)) ** 0.5
+    fitted_width = max(2, int(width * ratio) // 2 * 2)
+    fitted_height = max(2, int(height * ratio) // 2 * 2)
+    return fitted_width, fitted_height
 
 
 def run_ffmpeg(command):
