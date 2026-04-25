@@ -573,7 +573,15 @@ def build_ffmpeg_command(
     trim_start = validate_time(trim_start)
     trim_end = validate_time(trim_end)
 
-    command = [get_ffmpeg_path(), "-y"]
+    command = [
+        get_ffmpeg_path(),
+        "-y",
+        "-hide_banner",
+        "-filter_threads",
+        "1",
+        "-filter_complex_threads",
+        "1",
+    ]
     if trim_start:
         command.extend(["-ss", trim_start])
     if trim_end:
@@ -594,7 +602,7 @@ def build_ffmpeg_command(
         command.extend(["-stream_loop", "-1", "-i", str(music_path)])
 
     filters = [
-        f"[0:v]scale={width}:{height}:force_original_aspect_ratio=increase,"
+        f"[0:v]fps=30,scale={width}:{height}:force_original_aspect_ratio=increase,"
         f"crop={width}:{height},setsar=1[base]"
     ]
     current = "base"
@@ -646,6 +654,8 @@ def build_ffmpeg_command(
             "fast",
             "-crf",
             "18",
+            "-threads",
+            "1",
             "-pix_fmt",
             "yuv420p",
             "-movflags",
