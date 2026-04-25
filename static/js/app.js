@@ -83,9 +83,7 @@ if (processForm) {
         updateFileProgress(row, 18, "Processing");
 
         try {
-          const formData = new FormData(processForm);
-          formData.delete("filenames");
-          formData.set("filename", filename);
+          const formData = buildProcessPayload(filename);
 
           const response = await fetch("/process", {
             method: "POST",
@@ -211,6 +209,41 @@ if (processForm) {
       updateFileProgress(row, 0, "Queued");
     });
     updateOverallProgress(0, "Preparing");
+  }
+
+  function buildProcessPayload(filename) {
+    const formData = new FormData();
+    formData.append("filename", filename);
+    appendField(formData, "output_format");
+    appendField(formData, "category");
+    appendField(formData, "trim_start");
+    appendField(formData, "trim_end");
+    appendField(formData, "title");
+    appendField(formData, "text_position");
+    appendField(formData, "logo_position");
+
+    const muteAudio = document.getElementById("mute_audio");
+    if (muteAudio && muteAudio.checked) {
+      formData.append("mute_audio", "on");
+    }
+
+    appendFile(formData, "logo");
+    appendFile(formData, "music");
+    return formData;
+  }
+
+  function appendField(formData, fieldId) {
+    const field = document.getElementById(fieldId);
+    if (field) {
+      formData.append(fieldId, field.value || "");
+    }
+  }
+
+  function appendFile(formData, fieldId) {
+    const field = document.getElementById(fieldId);
+    if (field && field.files && field.files.length) {
+      formData.append(fieldId, field.files[0]);
+    }
   }
 
   function getProgressRow(filename) {
