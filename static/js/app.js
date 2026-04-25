@@ -85,7 +85,12 @@ if (processForm) {
         try {
           const formData = buildProcessPayload(filename);
 
-          const data = await postFormData("/process", formData);
+          const startData = await postFormData("/process/start", formData);
+          if (!startData.ok || !startData.job_id) {
+            throw new Error(startData.error || "Could not start processing.");
+          }
+
+          const data = await waitForJob(startData.job_id, row);
           if (!data.ok) {
             throw new Error(data.error || "Video processing failed.");
           }
@@ -212,6 +217,40 @@ if (processForm) {
         "Content-Type": "application/json",
       },
     });
+  }
+
+  async function waitForJob(jobId, row) {
+    let displayProgress = 22;
+    while (true) {
+      await sleep(1800);
+      const data = await getJson(`/process/status/${encodeURIComponent(jobId)}`);
+      if (!data.ok && data.status !== "failed") {
+        throw new Error(data.error || "Could not read processing status.");
+      }
+
+      if (data.status === "failed") {
+        throw new Error(data.error || "Video processing failed.");
+      }
+
+      if (data.status === "complete") {
+        updateFileProgress(row, 95, "Packaging");
+        return data.result;
+      }
+
+      displayProgress = Math.min(90, Math.max(displayProgress + 4, data.progress || 0));
+      updateFileProgress(row, displayProgress, data.message || "Processing");
+    }
+  }
+
+  function getJson(url) {
+    return sendRequest({
+      url,
+      method: "GET",
+    });
+  }
+
+  function sleep(milliseconds) {
+    return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
   }
 
   function sendRequest({ url, method, body, headers = {} }) {

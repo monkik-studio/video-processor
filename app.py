@@ -6,8 +6,10 @@ import shutil
 import subprocess
 import uuid
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from threading import Lock
 
 from flask import (
     Flask,
@@ -41,10 +43,13 @@ OUTPUT_FORMATS = {
     "square": {"label": "Square", "width": 1080, "height": 1080, "ratio": "1:1"},
 }
 
-DEFAULT_MAX_RENDER_PIXELS = "921600" if os.getenv("RENDER") else "2073600"
+DEFAULT_MAX_RENDER_PIXELS = "2073600"
 MAX_RENDER_PIXELS = int(os.getenv("MAX_RENDER_PIXELS", DEFAULT_MAX_RENDER_PIXELS))
 OUTPUT_CRF = os.getenv("OUTPUT_CRF", "18")
 OUTPUT_PRESET = os.getenv("OUTPUT_PRESET", "fast")
+PROCESS_EXECUTOR = ThreadPoolExecutor(max_workers=int(os.getenv("PROCESS_WORKERS", "1")))
+PROCESS_JOBS = {}
+PROCESS_JOBS_LOCK = Lock()
 
 TEXT_POSITIONS = {
     "top": "y=h*0.09",
@@ -201,57 +206,15 @@ def create_app():
         if not source_path or not source_path.exists():
             abort(404)
 
-        output_format = request.form.get("output_format", "youtube")
-        if output_format not in OUTPUT_FORMATS:
-            abort(400, "Unknown output format")
-
-        title = request.form.get("title", "").strip()
-        text_position = request.form.get("text_position", "bottom")
-        logo_position = request.form.get("logo_position", "bottom-right")
-        category = request.form.get("category", "property")
-        trim_start = request.form.get("trim_start", "").strip()
-        trim_end = request.form.get("trim_end", "").strip()
-        mute_audio = request.form.get("mute_audio") == "on"
-
-        file_id = uuid.uuid4().hex
-        output_name = f"{file_id}_{Path(filename).stem}_{output_format}.mp4"
-        output_path = OUTPUT_DIR / output_name
+        settings = collect_process_settings(request.form)
         logo_path = None
         music_path = None
 
         try:
             logo_path = save_optional_upload("logo", LOGO_EXTENSIONS)
             music_path = save_optional_upload("music", AUDIO_EXTENSIONS)
-            command = build_ffmpeg_command(
-                source_path=source_path,
-                output_path=output_path,
-                output_format=output_format,
-                title=title,
-                text_position=text_position,
-                logo_path=logo_path,
-                logo_position=logo_position,
-                music_path=music_path,
-                mute_audio=mute_audio,
-                trim_start=trim_start,
-                trim_end=trim_end,
-            )
-            run_ffmpeg(command)
-            info = probe_video(output_path)
-            metadata = append_metadata(
-                filename=output_name,
-                duration=info["duration"],
-                resolution=info["resolution"],
-                output_format=OUTPUT_FORMATS[output_format]["label"],
-                category=category,
-            )
-            youtube_metadata = generate_youtube_metadata(
-                category=category,
-                title=title,
-                output_format=OUTPUT_FORMATS[output_format]["label"],
-                duration_label=info["duration_label"],
-            )
+            result = process_video_file(source_path, filename, settings, logo_path, music_path)
         except RuntimeError as exc:
-            output_path.unlink(missing_ok=True)
             return jsonify({"ok": False, "error": str(exc)}), 500
         finally:
             if logo_path:
@@ -259,16 +222,50 @@ def create_app():
             if music_path:
                 music_path.unlink(missing_ok=True)
 
-        return jsonify(
+        return jsonify(result)
+
+    @app.route("/process/start", methods=["POST"])
+    def start_process():
+        filename = request.form.get("filename", "")
+        source_path = safe_child_path(UPLOAD_DIR, filename)
+        if not source_path or not source_path.exists():
+            return jsonify({"ok": False, "error": "Uploaded video was not found."}), 404
+
+        try:
+            settings = collect_process_settings(request.form)
+            logo_path = save_optional_upload("logo", LOGO_EXTENSIONS)
+            music_path = save_optional_upload("music", AUDIO_EXTENSIONS)
+        except RuntimeError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+
+        job_id = uuid.uuid4().hex
+        set_process_job(
+            job_id,
             {
                 "ok": True,
-                "filename": output_name,
-                "preview_url": url_for("output_file", filename=output_name),
-                "download_url": url_for("download_file", filename=output_name),
-                "metadata": metadata,
-                "youtube_metadata": youtube_metadata,
-            }
+                "status": "queued",
+                "progress": 5,
+                "message": "Queued",
+            },
         )
+        PROCESS_EXECUTOR.submit(
+            run_process_job,
+            app,
+            job_id,
+            source_path,
+            filename,
+            settings,
+            logo_path,
+            music_path,
+        )
+        return jsonify({"ok": True, "job_id": job_id})
+
+    @app.route("/process/status/<job_id>")
+    def process_status(job_id):
+        job = get_process_job(job_id)
+        if not job:
+            return jsonify({"ok": False, "error": "Processing job was not found."}), 404
+        return jsonify(job)
 
     @app.route("/zip", methods=["POST"])
     def create_zip():
@@ -336,6 +333,118 @@ def create_app():
         return {"ok": True}
 
     return app
+
+
+def collect_process_settings(form):
+    output_format = form.get("output_format", "youtube")
+    if output_format not in OUTPUT_FORMATS:
+        raise RuntimeError("Unknown output format.")
+
+    return {
+        "output_format": output_format,
+        "title": form.get("title", "").strip(),
+        "text_position": form.get("text_position", "bottom"),
+        "logo_position": form.get("logo_position", "bottom-right"),
+        "category": form.get("category", "property"),
+        "trim_start": form.get("trim_start", "").strip(),
+        "trim_end": form.get("trim_end", "").strip(),
+        "mute_audio": form.get("mute_audio") == "on",
+    }
+
+
+def set_process_job(job_id, data):
+    with PROCESS_JOBS_LOCK:
+        PROCESS_JOBS[job_id] = data
+
+
+def update_process_job(job_id, **updates):
+    with PROCESS_JOBS_LOCK:
+        current = PROCESS_JOBS.get(job_id, {})
+        current.update(updates)
+        PROCESS_JOBS[job_id] = current
+
+
+def get_process_job(job_id):
+    with PROCESS_JOBS_LOCK:
+        job = PROCESS_JOBS.get(job_id)
+        return dict(job) if job else None
+
+
+def run_process_job(app, job_id, source_path, filename, settings, logo_path, music_path):
+    with app.app_context():
+        try:
+            update_process_job(job_id, status="processing", progress=20, message="Processing video")
+            result = process_video_file(source_path, filename, settings, logo_path, music_path)
+            update_process_job(
+                job_id,
+                status="complete",
+                progress=100,
+                message="Complete",
+                result=result,
+            )
+        except RuntimeError as exc:
+            update_process_job(
+                job_id,
+                ok=False,
+                status="failed",
+                progress=100,
+                message="Failed",
+                error=str(exc),
+            )
+        finally:
+            if logo_path:
+                logo_path.unlink(missing_ok=True)
+            if music_path:
+                music_path.unlink(missing_ok=True)
+
+
+def process_video_file(source_path, filename, settings, logo_path, music_path):
+    output_format = settings["output_format"]
+    file_id = uuid.uuid4().hex
+    output_name = f"{file_id}_{Path(filename).stem}_{output_format}.mp4"
+    output_path = OUTPUT_DIR / output_name
+
+    try:
+        command = build_ffmpeg_command(
+            source_path=source_path,
+            output_path=output_path,
+            output_format=output_format,
+            title=settings["title"],
+            text_position=settings["text_position"],
+            logo_path=logo_path,
+            logo_position=settings["logo_position"],
+            music_path=music_path,
+            mute_audio=settings["mute_audio"],
+            trim_start=settings["trim_start"],
+            trim_end=settings["trim_end"],
+        )
+        run_ffmpeg(command)
+        info = probe_video(output_path)
+        metadata = append_metadata(
+            filename=output_name,
+            duration=info["duration"],
+            resolution=info["resolution"],
+            output_format=OUTPUT_FORMATS[output_format]["label"],
+            category=settings["category"],
+        )
+        youtube_metadata = generate_youtube_metadata(
+            category=settings["category"],
+            title=settings["title"],
+            output_format=OUTPUT_FORMATS[output_format]["label"],
+            duration_label=info["duration_label"],
+        )
+    except RuntimeError:
+        output_path.unlink(missing_ok=True)
+        raise
+
+    return {
+        "ok": True,
+        "filename": output_name,
+        "preview_url": f"/outputs/{output_name}",
+        "download_url": f"/download/{output_name}",
+        "metadata": metadata,
+        "youtube_metadata": youtube_metadata,
+    }
 
 
 def allowed_extension(filename, extensions):
